@@ -30,16 +30,12 @@
 \title{Scheduling on Multicore Systems}
 %
 %\titlerunning{Abbreviated paper title}
-% If the paper title is too long for the running head, you can set
-% an abbreviated paper title here
 %
 \author{Friedrich Answin Daniel Motz}
 %
 \authorrunning{D. Motz}
-% First names are abbreviated in the running head.
-% If there are more than two authors, 'et al.' is used.
 %
-\institute{FMI, Friedrich-Schiller-University Jena, Jena, Germany\\
+\institute{FMI, Friedrich-Schiller-University, Jena, Germany\\
 Seminar Work for Systemsoftware\\
 \email{daniel.motz@uni-jena.de}
 }
@@ -57,52 +53,103 @@ equation etc. does not need an indent, either.
 %
 %
 \section{Introduction}
-Processor Scheduling is, by definition, the system which holds it all together. It determines which
+Processor Scheduling is, by definition, the algorithm which holds it all together. It determines which
 process is permitted to run, when it may run, and for how long - it is ruler \textit{dei gratia}
 and the Computer Architects are it's gods. Some of these gods have left us great works of art,
 like the CFS Scheduler (current Linux scheduler) or $O(1)$ Scheduler (previous Linux scheduler), 
-but some behaviours of mentioned schedulers seem erratic. New research do scheduling prediction 
+but some behaviours of mentioned schedulers seem erratic. New research points to scheduling prediction 
 based on modelling of CPU schedulers' behaviours~\cite{meehean}.
 
 Moore's law will not be here to protect us from what is inevitable: transistor count will stop
 doubling. At some point, transistor sizes will meet atomic boundaries, at which point growth can
-solely be realised by parallelisation and clustering. It's questionable whether Quantum Computers
-will replace classic computers in scientific calculations, but not completely unimaginable. For
+solely be realised by parallelisation. It's questionable when Quantum Computers
+will replace classic computers in scientific calculations, but it might not take so long. For
 now, one may safely assume that computation will need to rely on classic CPU schedulers for some
-years to come. So, there is an undisputed necessity to efficiently manage multicore CPUs, not only
-in High Performance Computing, but also desktop PCs.~\cite{thread-sched-mc-platforms}
+years to come, especially in desktop computers. So, there is an undisputed necessity to efficiently
+manage multicore CPUs, not only in High Performance Computing, but also desktop PCs.~\cite{thread-sched-mc-platforms}
 
 The key challenges for multicore scheduling, are to achieve the goals formerly set for single-core
 CPU schedulers, meaning, that an octa-core processor should behave to a programme, as though it 
-was a single-core processor with an octupled performance. With faster CPUs and RAM not growing
-equally fast, cycle times to fetch from memory become higher and lie in the hundreds.~\cite{fedorova-phd}
-Making use of on-chip caches (all levels of them) is therefore key. Otherwise, overhead introduced
-by cache misses will limit the possible effectiveness of multicore CPUs. Cache-affinity, or 
-more generally, hardware affinity is a sub-goal of scalability.
+were a single-core processor with an octupled performance. With faster CPUs - and RAM clock speeds not
+keeping up, cycle times to fetch from memory become higher and lie in the hundreds.~\cite{fedorova-phd}
+Making use of on-chip caches (all levels of them) and other hardware features is therefore key.
+Otherwise, overhead introduced by cache misses will limit the possible effectiveness of multicore
+CPUs. Cache-affinity, or more generally, hardware affinity is a sub-goal of scalability.
 
 Research by Intel from 2007 suggests, that using a runtime called McRT, might enable near linear
 scalability for certain tasks, such as recognition, mining and synthesis applications or Xvid.~
 \cite{scalability-of-programs-multi-cores}
 
-\section{Parallel Architecture}
-\subsection{Motivation}
-In Computer Science, researchers 
+\section{Multi-Core Processor Scheduling}
+CPU scheduling on single-core processors is already discussed in the lecture and are not the main focus of this seminar work on multi-core processor scheduling. It is therefore omitted.
+\subsection{Multi-Core Processor Architecture}
+Multi-Core scheduling happens on a multi-core processor. A multi-core processor may be any processor with several cores.~\cite{multicore-slides}
+Most CPU architectures implement parallelisation on the instruction level, e.g. branch prediction
+in ARM CPUs.~\cite{arm-docs-branch-prediction} 
 
-\section{Notes / TODO}
-\subsubsection{Timesharing Schedulers}
-\begin{itemize}
-    \item Primary goal is low latency for interactive tasks
-    \item tasks are divided based on their level of interactivity
-    \begin{itemize}
-        \item this may be based on multiple factors, such as:
-        \item user priority
-        \item cpu usage
-    \end{itemize}
-    \item the tasks are organised into multiple queues depending on their level of interactivity
-    \item higher queue / level means higher priority
-    \item they move down a queue in two ways: the task does not yield the CPU in a time slice
-    \item v
-\end{itemize}
+There are two types of multiprocessor memory types:
+shared memory and distributed memory.
+
+Shared memory systems have one global memory space, in which each core can access any data in the
+memory.~\cite{multicore-slides}
+
+Distributed memory means, that each core has a local or private memory. Copying data from one local
+memory to another, may require a request.~\cite{multicore-slides}
+
+There are advantages to both, e.g. should a system use shared memory and private caches, the issue
+of cache validity occurs. Should a core write data to memory (or it's cache, depending on whether
+it is write-through cache or something else), it would make data cached in another core's cache
+invalid (meaning the value is older). For example, the cache controller of this processor will then need to 
+\textit{snoop} the memory \textit{bus}, invalidate it's cache and fetch it from memory, should it be read.~\cite{ostep} This is known as cache coherence.~\cite{multicore-slides}
+
+On the other hand, should there only be shared cache on every level, the time to retrieve data for a
+processor would be longer, compared to private cache. 
+
+Therefore, plenty of research has been done to determine at which level cache should be shared or 
+private, e.g. Armv8-A has 3 cache layers, two of which are internal and one shared level-3 cache.~\cite{arm-docs-cache}
+
+Also introduced by the architecture, is hardware affinity or the opposite - overhead due to in-affinity. A process might run on a core, load instructions and data into its cache. A CPU interrupt lets another process run and for some reason, the scheduler decides to run this process on a different core (with a different cache). The cache controller will have to newly fetch from the memory, using up valuable cycles. There are schedulers, which then let another process run, while I/O-actions or memory fetches are run in the background, however, this could be avoided in the first place, by always (or mostly) running a process on the same CPU.~\cite{ostep}
+
+\subsection{Global Queue}
+When using Single-Queue-Scheduling~\cite{ostep} or Global Queue Architecture~\cite{meehean} the scheduler has one global queue, from which it fetches a task to run. This concept only describes the accessibility for the queue, meaning it says nothing about how to decide which task shall be ran.
+
+The major advantage is that a core can access all tasks. We can also easily set the probability that a task is chosen. In a one-queue-per-core architecture, this would only be possible if we were to regularly monitor each queue and reassign tasks, e.g. from full to empty queues.
+
+The major drawback of a global run queue is synchronisation between cores. This introduces overhead due to locking.~\cite{meehean}
+
+\subsection{Distributed Queue}
+Using Distributed-Queue-Architecture means that each core has a private queue. This necessitates a mechanism, which assigns a task to a queue and balances the queues to distribute the load evenly. As is well known, tasks run unpredictable. The scheduler has no knowledge about when a task is going to finish (or maybe crash). 
+
+The intervals at which we check for imbalances are therefore the distributed queue's disadvantage. Another effect is, that imposing a scheduling policy is impossible. It would require to, again, maintain a data structure shared between cores, which manages the task to run next - this is against this architecture's definition.
+
+There are two immense advantages over global queues: the distributed queue conceptually enabled cache affinity. A task will only periodically be switched to another core.
+
+However, compared to a global queue, there is more effort to maintain a distributed queue, which does not suffer from locking or locking at scale (e.g. when there are hundreds of cores accessing the same queue).~\cite{ostep,meehean}
+
+\subsection{Linux Schedulers}
+The Linux Scheduler (at the time of writing) is the Completely Fair Scheduler (CFS). Formerly, Linux used the $O(1)$ Scheduler. 
+
+The $O(1)$ Scheduler maintains two arrays; one contains the active tasks (queued to be run) and the other all expired tasks (these processes have run for long enough, an arbitrary but well-chosen time-frame or quantum is set, after which a task becomes expired). Now at some point, all tasks will have run for the said quantum and are now expired. The scheduler then simply reassigns the active queue to be the expired one and vice versa.~\cite{linux-journal-cfs,ostep,meehean}
+
+The CF Scheduler aims to divide up processing power \textit{completely fairly}. Keeping in mind the goals set earlier, that single-core scheduling policies should transfer to multi-core processors, we now have a solution. According to the CFS' author, each task has a \emph{wait\_runtime} property. It accounts (in nanoseconds) how much time has elapsed, while another process has run. When the time comes to select another task to run, CFS selects the task with the highest \emph{wait\_runtime} or in other words - "the task with the 'gravest need' for more CPU time"~\cite{molnar-on-cfs-redhat-forum}.~\cite{molnar-on-cfs-redhat-forum,linux-journal-cfs,ostep,meehean} 
+
+The Law of Large Numbers tells us, that if we do an experiment often enough, the absolute probability will eventually converge to the theoretical probability. In effect, Molnar created a scheduler that works by these principles. Clearly, a process might exit before it will have gotten a fair share of processing power, but it will not starve either.
+
+\subsection{Scheduling Domains}
+Linux introduces scheduling domains and scheduling groups to hierarchically organise balancing between CPU-cores. There is a top-level scheduling domain, which has children scheduling domains, which in turn contains a subset of the CPUs.
+This enables the Linux Kernel to prioritise balancing between nodes, differentiating between physical nodes and avoids moving a task, e.g. from one NUMA-node to another arbitrarily. For this to happen, a high disparity in load would have had to occur.~\cite{understanding-linux}
+
+The development behind scheduling domains sought to increase efficiency with hyperthreading processors and NUMA architectures.\cite{lwn-kernel-dev}
+
+\section{Changes in Architecture}
+\subsection{UMA and NUMA}
+Non-Uniform Memory Access or NUMA gives software developers and applications insight into the distance between memory banks and processors.~\cite{numa-policies-bolosky} In multi-core systems with one CPU socket, the largest distance between a memory cell and a core is relatively small, compared to multi-socket computers. NUMA-nodes therefore help to enable hardware affinity, which is a goal of a multicore scheduler, in multi-socket systems - a common occurrence, even in low-performance servers (or some power-users' workstations) at the time of writing. Frameworks for task parallelisation, such as the Task Parallel Library~\cite{tpl-microsoft} are hindered on NUMA systems. Using algorithms, this effect may be limited and performance increased by a factor of 5.~\cite{scalable-numa} This relatively new research shows, that there is room for improvement on NUMA.
+
+NUMA technically is a shared-memory system, as described above. Other sockets, correctly NUMA-nodes, can address the so-called "local" memory-bank of another NUMA-node. Due to the transparency to the operating system regarding NUMA-node-structure, the software can prioritise moving tasks to cores in the same NUMA-node. The communication between NUMA-nodes comes with penalties, as there is one bus to communicate between them.
+
+Most importantly, NUMA replaces the former standard, especially in HPC - UMA. UMA has equal response time for any memory access from any CPU, with no locality advantage whatsoever. An important improvement of NUMA compared to UMA, is increased aggregated memory bandwidth, because each CPU has its own memory controller.~\cite{hpc-numa-slides}
+
+\subsection{Server Clusters and IP-NUMA}
 
 \subsubsection{Acknowledgements} Please place your acknowledgments at
 the end of the paper, preceded by an unnumbered run-in heading (i.e.
@@ -118,18 +165,23 @@ the end of the paper, preceded by an unnumbered run-in heading (i.e.
 \begin{thebibliography}{8}
 
 \bibitem{ostep}
-Arpaci-Dusseau, R. H., Arpaci-Dusseau, A. C.: Operating Systems Three Easy Pieces. Version 0.80. Arpaci-Dusseau Books, Inc.,
+ARPACI-DUSSEAU, R. H., ARPACI-DUSSEAU, A. C.: Operating Systems Three Easy Pieces. Version 0.80. Arpaci-Dusseau Books, Inc.,
 University of Wisconsin-Madison (2014)
 
 \bibitem{meehean}
-Meehean, J. T., : Towards Transparent CPU Scheduling. Dissertation,
+MEEHEAN, J. T., : Towards Transparent CPU Scheduling. Dissertation,
 University of Wisconsin-Madison (2011)
 
-\bibitem{binary_tree_index_properties}
-C. Riesbeck. EECS 311: Trees, \url{https://courses.cs.northwestern.edu/311/html/tree-notes.html}. Last accessed 10. March 2022
+\bibitem{syssoft}
+FLEISCHAUER, M., MITTERREITER, M., SICKERT, S., Systemsoftware.
+University of Jena (2022)
+
+\bibitem{understanding-linux}
+Daniel Bovet, and Marco Cesati. Understanding the Linux Kernel. O’Reilly
+Media, Inc., 3rd edition, 2005.
 
 \bibitem{thread-sched-mc-platforms}
-Rajagopanal, M., Lewis, B. T., Anderson, T. A.: Thread Scheduling for Multi-Core Platforms. Programming Systems Lab, Intel Corporation (2007)
+RAJAGOPANAL, M., LEWIS, B. T., ANDERSON, T. A.: Thread Scheduling for Multi-Core Platforms. Programming Systems Lab, Intel Corporation (2007)
 
 \bibitem{scalability-of-programs-multi-cores}
 SAHA, B., ADL-TABATABAI, A., GHULOUM, A., RAJAGOPALAN,
@@ -139,21 +191,90 @@ CARMEAN, D., AND FANG, J. Enabling scalability and performance
 in a large scale CMP environment. EuroSys (March 2007)
 
 \bibitem{fedorova-phd}
-FEDOROVA, A. Operating System Scheduling for Chip Multithreaded
+FEDOROVA, A., Operating System Scheduling for Chip Multithreaded
 Processors. PhD thesis, Division of Engineering and
 Applied Sciences, Harvard University, Cambridge, MA, Nov
 2006.
 
-\bibitem{ref_article1}
-Author, F.: Article title. Journal \textbf{2}(5), 99--110 (2016)
+\bibitem{numa-policies-bolosky}
+BOLOSKY, W. J., SCOTT, M. L., FITZGERALD, R. P., FOWLER, R. J., and Cox, A. L.
+NUMA policies and their relation to memory
+architecture. April 1991.
 
-\bibitem{ref_lncs1}
-Author, F., Author, S.: Title of a proceedings paper. In: Editor,
-F., Editor, S. (eds.) CONFERENCE 2016, LNCS, vol. 9999, pp. 1--13.
-Springer, Heidelberg (2016). \doi{10.10007/1234567890}
+\bibitem{scalable-numa}
+DREBES, A., POP, A., HEYDEMANN, K., COHEN, A., DRACH, N.
+Scalable Task Parallelism for NUMA: A Uniform Abstraction
+for Coordinated Scheduling and Memory Management. September 2016.
 
-\bibitem{ref_proc1}
-Author, A.-B.: Contribution title. In: 9th International Proceedings
-on Proceedings, pp. 1--2. Publisher, Location (2010)
+\bibitem{tpl-microsoft}
+Microsoft Docs on Task Parallel Library, \url{https://docs.microsoft.com/de-de/dotnet/standard/parallel-programming/task-parallel-library-tpl}. 
+Last accessed 13 Apr 2022
+
+\bibitem{multicore-slides}
+Multi-core architectures. Presentation. \url{https://www.cs.cmu.edu/~fp/courses/15213-s07/lectures/27-multicore.pdf}. 
+Last accessed 13 Apr 2022
+
+\bibitem{arm-docs-branch-prediction}
+arm Developer documentation. Branch prediction. \url{https://developer.arm.com/documentation/ddi0338/g/prefetch-unit/branch-prediction}
+Last accessed 13 Apr 2022
+
+\bibitem{arm-docs-neon-simd-mimd}
+NEON Programmer's Guide. Docs. \url{https://developer.arm.com/documentation/den0018/a/?lang=en}
+Last accessed 13 Apr 2022
+
+\bibitem{intel-docs-intrinsics-simd-mimd}
+Intel(R) Intrinsics Guide. Docs. \url{https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html}
+Last accessed 02 Apr 2022
+
+\bibitem{arm-docs-cache}
+Arm Docs. Armv8 Caches. \url{https://developer.arm.com/documentation/den0024/a/Caches}
+Last accessed 13 Apr 2022
+
+\bibitem{tlp-smt-cmp-umd-edu}
+Thread Level Parallelism Lecture, OWENS, J. \url{https://www.nvidia.com/content/cudazone/cudau/courses/ucdavis/lectures/tlp1.pdf}
+Last accessed 08 April 2022
+
+\bibitem{kernel-org-cfs}
+The Linux Kernel Archives. Linux Scheduler > Completely Fair Scheduler. \url{https://www.kernel.org/doc/html/latest/scheduler/sched-design-CFS.html}
+Last accesses 13 Apr 2022
+
+\bibitem{linux-journal-cfs}
+Linux Journal. Completely Fair Scheduler. PABLA, C. S., August 2009.
+Last accessed 13 Apr 2022
+
+\bibitem{molnar-on-cfs-redhat-forum}
+This is the CFS scheduler. MOLNAR, I. \url{https://people.redhat.com/mingo/cfs-scheduler/sched-design-CFS.txt}
+Last accessed 13 Apr 2022
+
+\bibitem{hpc-numa-slides}
+EDMOND. HPC-NUMA. Lecture Slides. \url{https://faculty.cc.gatech.edu/~echow/ipcc/hpc-course/HPC-numa.pdf}
+Georgia Tech University (2016)
+Last accessed 13 Apr 2022
+
+\bibitem{lwn-kernel-dev}
+Scheduling domains. user: corbet.\url{https://lwn.net/Articles/80911/}
+LWN.net (2004)
+
 \end{thebibliography}
+
+\newpage
+
+\subsubsection{Selbstständigkeitserklärung}
+\noindent Ich versichere, dass ich die vorliegende Arbeit selbstständig verfasst und keine anderen 
+als die angegebenen Hilfsmittel und Quellen benutzt habe. Zitate und gedankliche Übernahmen 
+aus fremden Quellen (einschließlich elektronischer Quellen) habe ich kenntlich gemacht. 
+Die eingereichte Arbeit wurde bisher keiner anderen Prüfungsbehörde vorgelegt und wurde auch
+nicht veröffentlicht. Mir ist bekannt, dass eine unwahre Erklärung rechtliche Folgen haben 
+und insbesondere dazu führen kann, dass die Arbeit als nicht bestanden bewertet wird.
+
+\vspace{10mm}
+
+\noindent
+\textbf{Jena, den 14.04.2022}
+\hfill
+Daniel Motz
+
+\par\noindent\rule{\textwidth}{0.4pt}
+
 \end{document}
+

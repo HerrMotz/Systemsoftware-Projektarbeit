@@ -43,11 +43,9 @@ Seminar Work for Systemsoftware\\
 \maketitle              % typeset the header of the contribution
 %
 \begin{abstract}
-Please note that the first paragraph of a section or subsection is
-not indented. The first paragraph that follows a table, figure,
-equation etc. does not need an indent, either.
+This seminar work contains insights into memory architecture in multi-core systems, multi-core scheduling concepts, such as global queue and distributed queue, multi-core scheduling on Linux and introduces other hardware features, like hardware multithreading, to the reader. It explains the importance of cache / hardware affinity and introduces methods, by which it can be made possible.
 
-\keywords{First keyword  \and Second keyword \and Another keyword.}
+\keywords{Systemsoftware \and multicore \and scheduling.}
 \end{abstract}
 %
 %
@@ -80,12 +78,8 @@ Research by Intel from 2007 suggests, that using a runtime called McRT, might en
 scalability for certain tasks, such as recognition, mining and synthesis applications or Xvid.~
 \cite{scalability-of-programs-multi-cores}
 
-\section{Multi-Core Processor Scheduling}
-CPU scheduling on single-core processors is already discussed in the lecture and are not the main focus of this seminar work on multi-core processor scheduling. It is therefore omitted.
-\subsection{Multi-Core Processor Architecture}
-Multi-Core scheduling happens on a multi-core processor. A multi-core processor may be any processor with several cores.~\cite{multicore-slides}
-Most CPU architectures implement parallelisation on the instruction level, e.g. branch prediction
-in ARM CPUs.~\cite{arm-docs-branch-prediction} 
+\section{Multi-Core Processor Architecutre}
+A multi-core processor may be any processor with several cores.~\cite{multicore-slides}
 
 There are two types of multiprocessor memory types:
 shared memory and distributed memory.
@@ -94,21 +88,29 @@ Shared memory systems have one global memory space, in which each core can acces
 memory.~\cite{multicore-slides}
 
 Distributed memory means, that each core has a local or private memory. Copying data from one local
-memory to another, may require a request.~\cite{multicore-slides}
+memory to another, will require a request The local or private address space of each processor cannot be addressed by other processors.~\cite{multicore-slides}
 
 There are advantages to both, e.g. should a system use shared memory and private caches, the issue
 of cache validity occurs. Should a core write data to memory (or it's cache, depending on whether
-it is write-through cache or something else), it would make data cached in another core's cache
-invalid (meaning the value is older). For example, the cache controller of this processor will then need to 
-\textit{snoop} the memory \textit{bus}, invalidate it's cache and fetch it from memory, should it be read.~\cite{ostep} This is known as cache coherence.~\cite{multicore-slides}
+it is write-through cache or something else), it would make data in another core's cache
+invalid (meaning the value is older). The cache controller of this processor will then need to 
+\textit{snoop} the memory \textit{bus}, meaning it monitors whether a memory address it holds in cache has been written to, invalidate it's cache and fetch it from memory - when needed.~\cite{ostep} This is known as cache coherence.~\cite{multicore-slides}
 
 On the other hand, should there only be shared cache on every level, the time to retrieve data for a
-processor would be longer, compared to private cache. 
-
-Therefore, plenty of research has been done to determine at which level cache should be shared or 
+processor would be longer, compared to private cache. Therefore, plenty of research has been done to determine at which level cache should be shared or 
 private, e.g. Armv8-A has 3 cache layers, two of which are internal and one shared level-3 cache.~\cite{arm-docs-cache}
 
-Also introduced by the architecture, is hardware affinity or the opposite - overhead due to in-affinity. A process might run on a core, load instructions and data into its cache. A CPU interrupt lets another process run and for some reason, the scheduler decides to run this process on a different core (with a different cache). The cache controller will have to newly fetch from the memory, using up valuable cycles. There are schedulers, which then let another process run, while I/O-actions or memory fetches are run in the background, however, this could be avoided in the first place, by always (or mostly) running a process on the same CPU.~\cite{ostep}
+Also introduced by the architecture, is hardware affinity. A process might run on one specific core. It will load instructions and data, which the cache controller will kindly remember for later use. A CPU interrupt lets another process run and for some reason, the scheduler decides to run the previous process on a different core (with a different cache). The cache controller will have to newly fetch from the memory, using up valuable cycles. As discussed before, it may take some tens or hundred cycles to fetch from memory once. There are schedulers, which then let another process run, while I/O-actions or memory fetches are run in the background, however, this could be avoided in the first place, by always (or preferably) running a process on the same processor, which in turn needs to be kept in mind by the scheduler.~\cite{ostep}
+
+\subsection{UMA and NUMA}
+Non-Uniform Memory Access or NUMA gives software developers and applications insight into the distance between memory banks and processors.~\cite{numa-policies-bolosky} The opposite would be Uniform Memory Access or UMA, also called Symmetric Multiprocessing or SMP, where all memory cells are connected to the mainboard chipset's Northbridge. This means, that the distance between each core and memory cell is the same. In multi-core systems with one CPU socket, the largest distance between a memory cell and a core is relatively small, compared to multi-socket computers. NUMA-nodes therefore help to enable hardware affinity on multi-socket systems, which is a goal of a multicore scheduler. Multi-socket systems have become a common occurrence, even in low-performance servers (or some power-users' workstations) at the time of writing. Frameworks for task parallelisation, such as the Task Parallel Library~\cite{tpl-microsoft} are hindered on NUMA systems. Using algorithms, this effect may be limited and performance increased by a factor of 5.~\cite{scalable-numa} This relatively new research shows, that there is room for improvement on NUMA.
+
+NUMA technically is a shared-memory system, as described above. Other sockets, correctly NUMA-nodes, can address the so-called "local" memory-bank of another NUMA-node. Due to the transparency to the operating system regarding NUMA-node-structure, the software can prioritise moving tasks to cores in the same NUMA-node. Moving tasks to other NUMA-nodes is possible, however, depending on implementation, it would require to copy the memory's contents to the other NUMA-node as well. This is in addition to having to re-cache contents on the new core.
+
+Most importantly, NUMA has a big advantage to UMA. UMA has equal response time for any memory access from any CPU, with no locality advantage whatsoever. An important improvement of NUMA compared to UMA, is increased aggregated memory bandwidth, because each CPU has its own memory controller.~\cite{hpc-numa-slides}
+
+\section{Multi-Core Processor Scheduling}
+CPU scheduling on single-core processors is already discussed in the lecture and are not the main focus of this seminar work on multi-core processor scheduling. It is therefore omitted.
 
 \subsection{Global Queue}
 When using Single-Queue-Scheduling~\cite{ostep} or Global Queue Architecture~\cite{meehean} the scheduler has one global queue, from which it fetches a task to run. This concept only describes the accessibility for the queue, meaning it says nothing about how to decide which task shall be ran.
@@ -129,9 +131,16 @@ However, compared to a global queue, there is more effort to maintain a distribu
 \subsection{Linux Schedulers}
 The Linux Scheduler (at the time of writing) is the Completely Fair Scheduler (CFS). Formerly, Linux used the $O(1)$ Scheduler. 
 
-The $O(1)$ Scheduler maintains two arrays; one contains the active tasks (queued to be run) and the other all expired tasks (these processes have run for long enough, an arbitrary but well-chosen time-frame or quantum is set, after which a task becomes expired). Now at some point, all tasks will have run for the said quantum and are now expired. The scheduler then simply reassigns the active queue to be the expired one and vice versa.~\cite{linux-journal-cfs,ostep,meehean}
+\subsubsection{The $O(1)$ Scheduler}
 
-The CF Scheduler aims to divide up processing power \textit{completely fairly}. Keeping in mind the goals set earlier, that single-core scheduling policies should transfer to multi-core processors, we now have a solution. According to the CFS' author, each task has a \emph{wait\_runtime} property. It accounts (in nanoseconds) how much time has elapsed, while another process has run. When the time comes to select another task to run, CFS selects the task with the highest \emph{wait\_runtime} or in other words - "the task with the 'gravest need' for more CPU time"~\cite{molnar-on-cfs-redhat-forum}.~\cite{molnar-on-cfs-redhat-forum,linux-journal-cfs,ostep,meehean} 
+maintains two arrays; one contains the active tasks (queued to be run) and the other all expired tasks (these processes have run for long enough, an arbitrary but well-chosen time-frame or quantum is set, after which a task becomes expired). Now at some point, all tasks will have run for the said quantum and are now expired. The scheduler then simply reassigns the active queue to be the expired one and vice versa.~\cite{linux-journal-cfs,ostep,meehean} 
+
+Firstly, $O(1)$ is a time-sharing scheduler. The concept of time-sharing developed out of the need to enable many users users to work on one computer - which reduced costs per user by a great deal.~\cite{wikipedia-timesharing-history} 
+$O(1)$ differentiates between \textit{real-time} and \textit{normal} priorities. Tasks assigned a real-time priority are always scheduled before a normal-priority task. In addition, it uses a similar mechanism to Multilevel-Feedback Queue architecture (MLFQ)~\cite{ostep} for \textbf{normal-priority tasks}, called decay-usage mechanism.~\cite{epema} Like MLFQ a task with higher priority preempts tasks with lower priority and are interrupted at set timeslices. Unlike MLFQ, decay-usage assigns larger time-slices to interactive tasks. These slices range from 5 to 800ms~\cite{meehean}. Depending on which resources a task uses, it is assigned an interactivity index. Resources like the terminal yield a higher interactivity, than e.g. reading from disk.
+
+$O(1)$ uses the already mentioned distributed run queue. Now, it has already been mentioned, how distributed run queues suffer from overhead due to the necessity of balancing tasks. $O(1)$ does this 
+
+\subsubsection{The Completely Fair Scheduler (CFS)} aims to divide up processing power \textit{completely fairly}. Keeping in mind the goals set earlier, that single-core scheduling policies should transfer to multi-core processors, we now have a solution. According to the CFS' author, each task has a \emph{wait\_runtime} property. It accounts (in nanoseconds) how much time has elapsed, while another process has run. When the time comes to select another task to run, CFS selects the task with the highest \emph{wait\_runtime} or in other words - "the task with the 'gravest need' for more CPU time"~\cite{molnar-on-cfs-redhat-forum}.~\cite{molnar-on-cfs-redhat-forum,linux-journal-cfs,ostep,meehean} 
 
 The Law of Large Numbers tells us, that if we do an experiment often enough, the absolute probability will eventually converge to the theoretical probability. In effect, Molnar created a scheduler that works by these principles. Clearly, a process might exit before it will have gotten a fair share of processing power, but it will not starve either.
 
@@ -139,17 +148,12 @@ The Law of Large Numbers tells us, that if we do an experiment often enough, the
 Linux introduces scheduling domains and scheduling groups to hierarchically organise balancing between CPU-cores. There is a top-level scheduling domain, which has children scheduling domains, which in turn contains a subset of the CPUs.
 This enables the Linux Kernel to prioritise balancing between nodes, differentiating between physical nodes and avoids moving a task, e.g. from one NUMA-node to another arbitrarily. For this to happen, a high disparity in load would have had to occur.~\cite{understanding-linux}
 
-The development behind scheduling domains sought to increase efficiency with hyperthreading processors and NUMA architectures.\cite{lwn-kernel-dev}
+The development behind scheduling domains sought to increase efficiency with hyperthreading processors and NUMA architectures.~\cite{lwn-kernel-dev}
 
-\section{Changes in Architecture}
-\subsection{UMA and NUMA}
-Non-Uniform Memory Access or NUMA gives software developers and applications insight into the distance between memory banks and processors.~\cite{numa-policies-bolosky} In multi-core systems with one CPU socket, the largest distance between a memory cell and a core is relatively small, compared to multi-socket computers. NUMA-nodes therefore help to enable hardware affinity, which is a goal of a multicore scheduler, in multi-socket systems - a common occurrence, even in low-performance servers (or some power-users' workstations) at the time of writing. Frameworks for task parallelisation, such as the Task Parallel Library~\cite{tpl-microsoft} are hindered on NUMA systems. Using algorithms, this effect may be limited and performance increased by a factor of 5.~\cite{scalable-numa} This relatively new research shows, that there is room for improvement on NUMA.
-
-NUMA technically is a shared-memory system, as described above. Other sockets, correctly NUMA-nodes, can address the so-called "local" memory-bank of another NUMA-node. Due to the transparency to the operating system regarding NUMA-node-structure, the software can prioritise moving tasks to cores in the same NUMA-node. The communication between NUMA-nodes comes with penalties, as there is one bus to communicate between them.
-
-Most importantly, NUMA replaces the former standard, especially in HPC - UMA. UMA has equal response time for any memory access from any CPU, with no locality advantage whatsoever. An important improvement of NUMA compared to UMA, is increased aggregated memory bandwidth, because each CPU has its own memory controller.~\cite{hpc-numa-slides}
-
-\subsection{Server Clusters and IP-NUMA}
+\subsection{Hardware Multithreading}
+This topic is related to context-switching decisions related to specific events, made by the hardware.
+A multithreaded processor may run a task which accesses I/O (or any other resource other than cache), causing to \textit{stall} the processor, which would usually wait for the maybe hundreds of cycles. A \textit{coarse-grained} multithreaded processor would switch to a different process while the high-latency operation fetches from said resource. This causes the processor to idle for a bit and then switch to a new task when the response might soon return.~\cite{fedorova-phd}
+Fine-grained multithreaded processors switches every cycle, to avoid this behaviour and possible waste of cycles.~\cite{fedorova-phd}
 
 \subsubsection{Acknowledgements} Please place your acknowledgments at
 the end of the paper, preceded by an unnumbered run-in heading (i.e.
@@ -179,6 +183,9 @@ University of Jena (2022)
 \bibitem{understanding-linux}
 Daniel Bovet, and Marco Cesati. Understanding the Linux Kernel. O’Reilly
 Media, Inc., 3rd edition, 2005.
+
+\bibitem{epema}
+D. H. J. Epema. 1998. Decay-usage scheduling in multiprocessors. ACM Trans. Comput. Syst. 16, 4 (Nov. 1998), 367–415. DOI:https://doi.org/10.1145/292523.292535
 
 \bibitem{thread-sched-mc-platforms}
 RAJAGOPANAL, M., LEWIS, B. T., ANDERSON, T. A.: Thread Scheduling for Multi-Core Platforms. Programming Systems Lab, Intel Corporation (2007)
@@ -254,6 +261,11 @@ Last accessed 13 Apr 2022
 \bibitem{lwn-kernel-dev}
 Scheduling domains. user: corbet.\url{https://lwn.net/Articles/80911/}
 LWN.net (2004)
+Last accessed 13 Apr 2022
+
+\bibitem{wikipedia-timesharing-history}
+Wikipedia. Time-sharing. \url{https://en.wikipedia.org/wiki/Time-sharing}
+Last accessed 14 Apr 2022
 
 \end{thebibliography}
 
